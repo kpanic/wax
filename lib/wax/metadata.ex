@@ -344,8 +344,10 @@ defmodule Wax.Metadata do
     |> Enum.map(fn {_no, entry} ->
       entry
     end)
+    |> then(fn entries ->
+      :persistent_term.put(@mdsv3_key, entries)
+    end)
 
-    :persistent_term.put(@mdsv3_key, entries)
 
     state
   end
