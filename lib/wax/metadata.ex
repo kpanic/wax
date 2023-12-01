@@ -218,8 +218,7 @@ defmodule Wax.Metadata do
   def handle_continue(:update_metadata, state) do
     load_from_dir()
 
-    dbg(state)
-    state = update_metadata(state) |> dbg()
+    state = update_metadata(state)
 
     schedule_update()
 
@@ -235,7 +234,7 @@ defmodule Wax.Metadata do
 
   @impl true
   def handle_info(:update_metadata, state) do
-    state = update_metadata(state) |> dbg()
+    state = update_metadata(state)
 
     schedule_update()
 
@@ -264,16 +263,6 @@ defmodule Wax.Metadata do
 
   defp do_update_metadata(state) do
     certs = :public_key.cacerts_get()
-
-    ssl_opts = [
-      cacerts: certs,
-      verify: :verify_peer,
-      customize_hostname_check: [
-        match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
-      ],
-      crl_check: true,
-      crl_cache: {:ssl_crl_cache, {:internal, [http: 1000]}}
-    ]
 
     headers =
       if state[:last_modified] do
@@ -322,7 +311,6 @@ defmodule Wax.Metadata do
         number
       end)
 
-    dbg(headers)
     last_modified = last_modified(headers)
 
     %{state | last_modified: last_modified, version_number: version_number}
