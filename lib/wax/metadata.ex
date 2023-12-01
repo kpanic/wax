@@ -262,8 +262,6 @@ defmodule Wax.Metadata do
   end
 
   defp do_update_metadata(state) do
-    certs = :public_key.cacerts_get()
-
     headers =
       if state[:last_modified] do
         [{~c"if-modified-since", state[:last_modified]}]
