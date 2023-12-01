@@ -269,8 +269,9 @@ defmodule Wax.AttestationStatementFormat.Packed do
     with :ok <- valid_cbor?(att_stmt),
          :ok <- valid_attestation_certificate?(List.first(att_stmt["x5c"]), auth_data),
          :ok <- valid_x5c_signature?(att_stmt, auth_data, client_data_hash),
+         #  |> dbg() do
          {:ok, maybe_metadata_statement} <-
-           attestation_path_valid?(att_stmt["x5c"], challenge, auth_data) do #  |> dbg() do
+           attestation_path_valid?(att_stmt["x5c"], challenge, auth_data) do
       {:ok,
        {attestation_type(maybe_metadata_statement), att_stmt["x5c"], maybe_metadata_statement}}
     end
@@ -443,6 +444,7 @@ defmodule Wax.AttestationStatementFormat.Packed do
          auth_data
        ) do
     dbg(auth_data)
+
     case Wax.Metadata.get_by_aaguid(auth_data.attested_credential_data.aaguid, challenge) do
       {:ok, metadata_statement} ->
         root_certs =
