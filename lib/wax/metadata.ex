@@ -28,34 +28,6 @@ defmodule Wax.Metadata do
                               |> X509.Certificate.from_pem!()
                               |> X509.Certificate.to_der()
 
-  @starfish_root_certificate """
-                             -----BEGIN CERTIFICATE-----
-                             MIICaDCCAe6gAwIBAgIPBCqih0DiJLW7+UHXx/o1MAoGCCqGSM49BAMDMGcxCzAJ
-                             BgNVBAYTAlVTMRYwFAYDVQQKDA1GSURPIEFsbGlhbmNlMScwJQYDVQQLDB5GQUtF
-                             IE1ldGFkYXRhIDMgQkxPQiBST09UIEZBS0UxFzAVBgNVBAMMDkZBS0UgUm9vdCBG
-                             QUtFMB4XDTE3MDIwMTAwMDAwMFoXDTQ1MDEzMTIzNTk1OVowZzELMAkGA1UEBhMC
-                             VVMxFjAUBgNVBAoMDUZJRE8gQWxsaWFuY2UxJzAlBgNVBAsMHkZBS0UgTWV0YWRh
-                             dGEgMyBCTE9CIFJPT1QgRkFLRTEXMBUGA1UEAwwORkFLRSBSb290IEZBS0UwdjAQ
-                             BgcqhkjOPQIBBgUrgQQAIgNiAASKYiz3YltC6+lmxhPKwA1WFZlIqnX8yL5RybSL
-                             TKFAPEQeTD9O6mOz+tg8wcSdnVxHzwnXiQKJwhrav70rKc2ierQi/4QUrdsPes8T
-                             EirZOkCVJurpDFbXZOgs++pa4XmjYDBeMAsGA1UdDwQEAwIBBjAPBgNVHRMBAf8E
-                             BTADAQH/MB0GA1UdDgQWBBQGcfeCs0Y8D+lh6U5B2xSrR74eHTAfBgNVHSMEGDAW
-                             gBQGcfeCs0Y8D+lh6U5B2xSrR74eHTAKBggqhkjOPQQDAwNoADBlAjEA/xFsgri0
-                             xubSa3y3v5ormpPqCwfqn9s0MLBAtzCIgxQ/zkzPKctkiwoPtDzI51KnAjAmeMyg
-                             X2S5Ht8+e+EQnezLJBJXtnkRWY+Zt491wgt/AwSs5PHHMv5QgjELOuMxQBc=
-                             -----END CERTIFICATE-----
-                             """
-                             |> X509.Certificate.from_pem!()
-                             |> X509.Certificate.to_der()
-
-  @fido_endpoints [
-    "https://mds3.fido.tools/execute/21b3ed6878e47373193abbd1fecee34aaca91a2ffca964ab8a28d5ef096e8549",
-    "https://mds3.fido.tools/execute/5cd04b87b2df59204d916382f9cf0406242015d34ce12a8452b7425635607d16",
-    "https://mds3.fido.tools/execute/414b2fecfd3d59c6879dad19c532b577efb27c922d47b88ffa8e7246f1ec4970",
-    "https://mds3.fido.tools/execute/a950ce35c65ba0440b5387828fa50fd05df8e3b3b4cff415e2492f0b6c5409de",
-    "https://mds3.fido.tools/execute/cb8108171f707686e4014069373761f3a45e7faa8418d90fbe15d9b4af2b44cb"
-  ]
-
   @mdsv3_key {__MODULE__, :mdsv3}
   @local_key {__MODULE__, :local}
 
@@ -130,8 +102,6 @@ defmodule Wax.Metadata do
 
     aaguid_str = a <> "-" <> b <> "-" <> c <> "-" <> d <> "-" <> e
 
-    dbg({:aaguid_str, aaguid_str})
-
     [:persistent_term.get(@mdsv3_key, []), :persistent_term.get(@local_key, [])]
     |> List.flatten()
     |> Enum.find(fn
@@ -141,7 +111,6 @@ defmodule Wax.Metadata do
       _ ->
         false
     end)
-    |> IO.inspect(label: "FIND RESULT")
     |> check_metadata_validity_and_return(challenge)
   end
 
@@ -248,7 +217,9 @@ defmodule Wax.Metadata do
   @impl true
   def handle_continue(:update_metadata, state) do
     load_from_dir()
-    state = update_metadata(state)
+
+    dbg(state)
+    state = update_metadata(state) |> dbg()
 
     schedule_update()
 
@@ -264,7 +235,7 @@ defmodule Wax.Metadata do
 
   @impl true
   def handle_info(:update_metadata, state) do
-    state = update_metadata(state)
+    state = update_metadata(state) |> dbg()
 
     schedule_update()
 
@@ -311,45 +282,50 @@ defmodule Wax.Metadata do
         []
       end
 
-    @fido_endpoints
-    |> Enum.map(fn endpoint ->
-      case HTTPoison.get(endpoint, headers: headers) do
-        {:ok, %HTTPoison.Response{status_code: 200, body: jwt}} ->
-          jwt
+    version_number =
+      get_fido_endpoints_from_env()
+      |> Task.async_stream(fn endpoint ->
+        case HTTPoison.get(endpoint, headers: headers) do
+          {:ok, %HTTPoison.Response{status_code: 200, body: jwt}} ->
+            jwt
 
-        {:error, error} ->
-          Logger.error(inspect(error))
-          error
-      end
-    end)
-    |> Enum.map(fn jwt ->
-      case Wax.Utils.JWS.verify_with_x5c(jwt, @starfish_root_certificate) do
-        {:ok, metadata} ->
-          entries =
-            if metadata["no"] > state.version_number do
-              metadata["entries"]
-            else
-              nil
-            end
+          {:error, error} ->
+            Logger.error(inspect(error))
+            :error
+        end
+      end)
+      |> Enum.to_list()
+      |> Enum.map(fn {:ok, jwt} ->
+        case Wax.Utils.JWS.verify_with_x5c(jwt, get_root_certificate()) do
+          {:ok, metadata} ->
+            entries =
+              if metadata["no"] > state.version_number do
+                metadata["entries"]
+              else
+                nil
+              end
 
-          {metadata["no"], entries}
+            {metadata["no"], entries}
 
-        {:error, reason} ->
-          Logger.info("Failed to verify FIDO MDSV3 metadata (reason: #{inspect(reason)})")
+          {:error, reason} ->
+            Logger.info("Failed to verify FIDO MDSV3 metadata (reason: #{inspect(reason)})")
 
-          {-1, nil}
-      end
-    end)
-    |> Enum.reject(fn {_no, entry} -> is_nil(entry) end)
-    |> Enum.map(fn {_no, entry} ->
-      entry
-    end)
-    |> then(fn entries ->
-      :persistent_term.put(@mdsv3_key, entries)
-    end)
+            {-1, nil}
+        end
+      end)
+      |> Enum.reject(fn {_no, entry} -> is_nil(entry) end)
+      |> Enum.reduce({-1, []}, fn {number, entry}, {_no, entries} ->
+        {number, [entry | entries]}
+      end)
+      |> then(fn {number, entries} ->
+        :persistent_term.put(@mdsv3_key, entries)
+        number
+      end)
 
+    dbg(headers)
+    last_modified = last_modified(headers)
 
-    state
+    %{state | last_modified: last_modified, version_number: version_number}
   end
 
   defp process_and_save_metadata(jws, state) do
@@ -411,5 +387,16 @@ defmodule Wax.Metadata do
     :persistent_term.put(@local_key, statements)
 
     statements
+  end
+
+  defp get_fido_endpoints_from_env() do
+    Application.get_env(:wax_, :fido_endpoints, [])
+  end
+
+  defp get_root_certificate() do
+    :wax_
+    |> Application.get_env(:root_certificate)
+    |> X509.Certificate.from_pem!()
+    |> X509.Certificate.to_der()
   end
 end
