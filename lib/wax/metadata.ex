@@ -76,6 +76,8 @@ defmodule Wax.Metadata do
 
     aaguid_str = a <> "-" <> b <> "-" <> c <> "-" <> d <> "-" <> e
 
+    Logger.info("Trying to find the Metadata Statement by aaguid", %{aaguid: aaguid_str})
+
     [:persistent_term.get(@mdsv3_key, []), :persistent_term.get(@local_key, [])]
     |> List.flatten()
     |> Enum.find(fn
