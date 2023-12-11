@@ -15,14 +15,16 @@ defmodule Wax.Utils.PKIX do
   end
 
   def path_valid?(root_certs, rest_of_chain, opts) do
+    # NOTE we swapped the 1st and 2st condition because we must validate if the certificate
+    # is in the root_cert first.
     cond do
-      # A test in the suite checks if providing a full path fails
-      match?({:ok, _}, :public_key.pkix_path_validation(hd(rest_of_chain), rest_of_chain, opts)) ->
-        false
-
       # Won't validate with :public_key, but it's allowed by https://github.com/w3c/webauthn/pull/1509
       length(rest_of_chain) == 1 and hd(rest_of_chain) in root_certs ->
         true
+
+      # A test in the suite checks if providing a full path fails
+      match?({:ok, _}, :public_key.pkix_path_validation(hd(rest_of_chain), rest_of_chain, opts)) ->
+        false
 
       true ->
         Enum.any?(
